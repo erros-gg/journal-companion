@@ -4,9 +4,13 @@
 package platform
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 )
+
+// ErrNotImplemented is returned by platform stubs pending a future phase.
+var ErrNotImplemented = errors.New("not yet implemented")
 
 // ConfigDir returns the platform-appropriate directory for all app data:
 // config file, database, and log file.
