@@ -1,0 +1,17 @@
+# Binaries
+*.exe
+*.exe~
+dist/
+
+# Go
+vendor/
+
+# Config (never commit API keys)
+config.json
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
