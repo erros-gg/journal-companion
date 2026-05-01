@@ -406,7 +406,7 @@ func (a *App) onExit() {
 // ── Price sync ───────────────────────────────────────────────────────────────
 
 func (a *App) startSyncer(ctx context.Context) {
-	savedVarsDir, err := syncer.DeriveSavedVarsDir(a.Config.Watch)
+	addonDir, err := syncer.DeriveAddonDir(a.Config.Watch)
 	if err != nil {
 		slog.Info("price sync unavailable", "reason", err)
 		state.mPriceStatus.SetTitle("Prices: not configured")
@@ -425,16 +425,16 @@ func (a *App) startSyncer(ctx context.Context) {
 	}
 
 	cfg := syncer.Config{
-		Interval:     interval,
-		SnapshotURL:  snapshotURL,
-		SavedVarsDir: savedVarsDir,
+		Interval:    interval,
+		SnapshotURL: snapshotURL,
+		AddonDir:    addonDir,
 		TokenFunc: func() string {
 			state.mu.Lock()
 			defer state.mu.Unlock()
 			return state.token
 		},
 	}
-	slog.Info("price syncer configured", "url", snapshotURL, "dir", savedVarsDir)
+	slog.Info("price syncer configured", "url", snapshotURL, "dir", addonDir)
 	s := syncer.New(cfg, a.Config.Behavior.SyncPrices, a)
 	a.priceSyncer = s
 

@@ -70,6 +70,28 @@ func TestDeriveSavedVarsDir_Missing(t *testing.T) {
 	}
 }
 
+func TestDeriveAddonDir_Found(t *testing.T) {
+	const watchPath = `C:\Users\test\SavedVariables\TheJournalCompanion.lua`
+	watches := []config.Watch{
+		{Label: "eso-savedvariables", Path: watchPath},
+	}
+	dir, err := DeriveAddonDir(watches)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := filepath.Join(filepath.Dir(filepath.Dir(watchPath)), "AddOns", "TheJournalCompanion")
+	if dir != want {
+		t.Errorf("got %q, want %q", dir, want)
+	}
+}
+
+func TestDeriveAddonDir_Missing(t *testing.T) {
+	_, err := DeriveAddonDir(nil)
+	if err == nil {
+		t.Fatal("expected error when no watches configured")
+	}
+}
+
 // ── Atomic write ─────────────────────────────────────────────────────────────
 
 func TestAtomicWrite_WritesContent(t *testing.T) {
@@ -133,7 +155,7 @@ func TestDoSync_200WritesFile(t *testing.T) {
 	defer srv.Close()
 
 	dir := t.TempDir()
-	s := New(Config{Interval: time.Hour, SnapshotURL: srv.URL, SavedVarsDir: dir}, true, noopReporter{})
+	s := New(Config{Interval: time.Hour, SnapshotURL: srv.URL, AddonDir: dir}, true, noopReporter{})
 
 	if err := s.doSync(context.Background()); err != nil {
 		t.Fatalf("doSync: %v", err)
@@ -162,7 +184,7 @@ func TestDoSync_304SkipsWrite(t *testing.T) {
 	defer srv.Close()
 
 	dir := t.TempDir()
-	s := New(Config{Interval: time.Hour, SnapshotURL: srv.URL, SavedVarsDir: dir}, true, noopReporter{})
+	s := New(Config{Interval: time.Hour, SnapshotURL: srv.URL, AddonDir: dir}, true, noopReporter{})
 
 	// First sync: 200, file written.
 	if err := s.doSync(context.Background()); err != nil {
@@ -195,7 +217,7 @@ func TestDoSync_CachesConditionalHeaders(t *testing.T) {
 	defer srv.Close()
 
 	dir := t.TempDir()
-	s := New(Config{Interval: time.Hour, SnapshotURL: srv.URL, SavedVarsDir: dir}, true, noopReporter{})
+	s := New(Config{Interval: time.Hour, SnapshotURL: srv.URL, AddonDir: dir}, true, noopReporter{})
 
 	// First request: no conditional headers sent yet.
 	s.doSync(context.Background())
@@ -219,7 +241,7 @@ func TestDoSync_HTTPErrorReturnsError(t *testing.T) {
 	defer srv.Close()
 
 	dir := t.TempDir()
-	s := New(Config{Interval: time.Hour, SnapshotURL: srv.URL, SavedVarsDir: dir}, true, noopReporter{})
+	s := New(Config{Interval: time.Hour, SnapshotURL: srv.URL, AddonDir: dir}, true, noopReporter{})
 
 	if err := s.doSync(context.Background()); err == nil {
 		t.Fatal("expected error on 500, got nil")
@@ -237,7 +259,7 @@ func TestSyncOnce_ReportsStatus(t *testing.T) {
 
 	dir := t.TempDir()
 	rep := &capturingReporter{}
-	s := New(Config{Interval: time.Hour, SnapshotURL: srv.URL, SavedVarsDir: dir}, true, rep)
+	s := New(Config{Interval: time.Hour, SnapshotURL: srv.URL, AddonDir: dir}, true, rep)
 
 	s.syncOnce(context.Background())
 
@@ -262,7 +284,7 @@ func TestSyncOnce_SuccessReportsNilError(t *testing.T) {
 
 	dir := t.TempDir()
 	rep := &capturingReporter{}
-	s := New(Config{Interval: time.Hour, SnapshotURL: srv.URL, SavedVarsDir: dir}, true, rep)
+	s := New(Config{Interval: time.Hour, SnapshotURL: srv.URL, AddonDir: dir}, true, rep)
 
 	s.syncOnce(context.Background())
 

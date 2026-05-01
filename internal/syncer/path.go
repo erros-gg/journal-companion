@@ -8,12 +8,9 @@ import (
 )
 
 // DeriveSavedVarsDir finds the watch entry labelled "eso-savedvariables" and
-// returns its parent directory — the ESO SavedVariables folder where
-// JournalPrices.lua should be written.
+// returns its parent directory — the ESO SavedVariables folder.
 //
-// Returns an error if no such entry is configured. This is expected for users
-// who haven't set up ESO upload watching yet; the Syncer refuses to start rather
-// than writing to an unknown location.
+// Returns an error if no such entry is configured.
 func DeriveSavedVarsDir(watches []config.Watch) (string, error) {
 	for _, w := range watches {
 		if w.Label == "eso-savedvariables" {
@@ -21,4 +18,21 @@ func DeriveSavedVarsDir(watches []config.Watch) (string, error) {
 		}
 	}
 	return "", errors.New("no eso-savedvariables watch configured")
+}
+
+// DeriveAddonDir returns the TheJournalCompanion addon directory by walking up
+// from SavedVariables to the ESO live root, then into AddOns.
+//
+// ESO's SavedVariables live at:  .../live/SavedVariables/
+// The addon lives at:            .../live/AddOns/TheJournalCompanion/
+//
+// JournalPrices.lua is written here — not to SavedVariables — so ESO never
+// serialises and overwrites it when the player does /reloadui.
+func DeriveAddonDir(watches []config.Watch) (string, error) {
+	savedVarsDir, err := DeriveSavedVarsDir(watches)
+	if err != nil {
+		return "", err
+	}
+	liveDir := filepath.Dir(savedVarsDir)
+	return filepath.Join(liveDir, "AddOns", "TheJournalCompanion"), nil
 }

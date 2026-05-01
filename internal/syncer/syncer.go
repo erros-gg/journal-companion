@@ -33,9 +33,9 @@ type SyncStatus struct {
 // Config carries the runtime parameters for a Syncer. All fields are immutable
 // after construction; the enabled flag is toggled via SetEnabled.
 type Config struct {
-	Interval     time.Duration
-	SnapshotURL  string
-	SavedVarsDir string
+	Interval    time.Duration
+	SnapshotURL string
+	AddonDir    string // path to TheJournalCompanion addon folder; JournalPrices.lua is written here
 	// TokenFunc returns the current device Bearer token. Called on each request.
 	// Returns an empty string when the user is not signed in.
 	TokenFunc func() string

@@ -57,7 +57,7 @@ func (s *Syncer) doSync(ctx context.Context) error {
 		return fmt.Errorf("read decompressed body: %w", err)
 	}
 
-	target := filepath.Join(s.cfg.SavedVarsDir, "JournalPrices.lua")
+	target := filepath.Join(s.cfg.AddonDir, "JournalPrices.lua")
 	if err := atomicWrite(target, body); err != nil {
 		return fmt.Errorf("write %s: %w", target, err)
 	}
