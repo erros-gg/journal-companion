@@ -481,9 +481,36 @@ Returns the current status of an upload. Auth via bearer device token. RLS ensur
 
 Returns the row from `companion_uploads`, formatted as the JSON shape described in Part 1's "Polling for parse result" section.
 
-**`POST /api/companion/auth/initiate`**, **`POST /api/companion/auth/poll`**, **`GET /api/companion/auth/authorize`** (and the associated browser-facing page at `/companion/authorize`)
+**`POST /api/companion/auth/initiate`**
 
-The device-token auth flow endpoints. Detailed in the previous spec; nothing changes from the move to server-side parsing.
+No authentication required. Creates a pending auth session.
+
+```
+Request body:  { "sessionId": "<hex>", "callbackPort": 53219, "deviceLabel": "Companion App on Windows" }
+Response 200:  { "authUrl": "https://journal.erros.gg/companion/authorize?session=<sessionId>" }
+Response 400:  { "error": "..." }   — missing sessionId or callbackPort
+```
+
+Session expires after 10 minutes. The `authUrl` is the page the companion opens in the user's browser.
+
+**`GET /companion/authorize?session=<id>`** (browser page, not API)
+
+Requires Supabase session. If user is not signed in, redirects to `/auth/login?next=<encoded-return-url>`.
+On authorize click: generates device token, stores hash in `device_tokens`, then redirects the browser to `http://localhost:<callbackPort>/callback?token=<rawToken>&username=<displayName>`.
+
+**`POST /api/companion/auth/poll`**
+
+No authentication required. Checks whether the user has authorized the session.
+
+```
+Request body:  { "sessionId": "<hex>" }
+Response:      { "status": "pending" }
+               { "status": "authorized", "token": "<rawToken>", "username": "<displayName>" }
+               { "status": "expired" }
+               { "status": "error", "error": "..." }
+```
+
+The raw token is returned **exactly once** — subsequent polls for the same session return `"expired"`. The companion races the poll loop against the localhost browser redirect; whichever arrives first is used.
 
 **`GET /api/companion/version`** *(optional, v1.5)*
 

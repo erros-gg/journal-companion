@@ -16,13 +16,16 @@ type Config struct {
 }
 
 type Network struct {
-	APIBase string `toml:"api_base"`
+	APIBase     string `toml:"api_base"`
+	SnapshotURL string `toml:"snapshot_url"`
 }
 
 type Behavior struct {
-	StartWithOS    bool `toml:"start_with_os"`
-	UploadOnChange bool `toml:"upload_on_change"`
-	DebounceMs     int  `toml:"debounce_ms"`
+	StartWithOS           bool `toml:"start_with_os"`
+	UploadOnChange        bool `toml:"upload_on_change"`
+	DebounceMs            int  `toml:"debounce_ms"`
+	SyncPrices            bool `toml:"sync_prices"`
+	SyncPricesIntervalMin int  `toml:"sync_prices_interval_min"`
 }
 
 // Watch describes a single file to monitor and the label the server uses to
@@ -40,12 +43,15 @@ type Watch struct {
 func defaults() Config {
 	return Config{
 		Network: Network{
-			APIBase: "https://journal.erros.gg",
+			APIBase:     "https://journal.erros.gg",
+			SnapshotURL: "", // derived from APIBase at runtime when empty
 		},
 		Behavior: Behavior{
-			StartWithOS:    false,
-			UploadOnChange: true,
-			DebounceMs:     2000,
+			StartWithOS:           false,
+			UploadOnChange:        true,
+			DebounceMs:            2000,
+			SyncPrices:            true,
+			SyncPricesIntervalMin: 60,
 		},
 	}
 }
@@ -71,8 +77,14 @@ func LoadOrCreate(path string) (*Config, error) {
 	if cfg.Network.APIBase == "" {
 		cfg.Network.APIBase = d.Network.APIBase
 	}
+	if cfg.Network.SnapshotURL == "" {
+		cfg.Network.SnapshotURL = d.Network.SnapshotURL
+	}
 	if cfg.Behavior.DebounceMs == 0 {
 		cfg.Behavior.DebounceMs = d.Behavior.DebounceMs
+	}
+	if cfg.Behavior.SyncPricesIntervalMin == 0 {
+		cfg.Behavior.SyncPricesIntervalMin = d.Behavior.SyncPricesIntervalMin
 	}
 
 	return &cfg, nil

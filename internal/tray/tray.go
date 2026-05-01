@@ -2,6 +2,7 @@
 package tray
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -11,7 +12,9 @@ import (
 	"github.com/erros-gg/journal-companion/internal/config"
 	"github.com/erros-gg/journal-companion/internal/db"
 	"github.com/erros-gg/journal-companion/internal/platform"
+	"github.com/erros-gg/journal-companion/internal/syncer"
 	"github.com/erros-gg/journal-companion/internal/uploader"
+	"github.com/erros-gg/journal-companion/internal/watcher"
 	"github.com/getlantern/systray"
 )
 
@@ -22,21 +25,32 @@ type App struct {
 	ConfigPath string
 	DB         *db.DB
 	AppDir     string
+
+	cancelWatcher context.CancelFunc
+	syncCtx       context.Context
+	priceSyncer   *syncer.Syncer // nil if no eso-savedvariables watch is configured
 }
 
-// trayState holds live menu-item references and mutable auth state.
-// All mutations go through the App setter methods which hold mu.
+// trayState holds live menu-item references and mutable auth/watcher state.
 type trayState struct {
 	mu sync.Mutex
 
 	mAuthStatus   *systray.MenuItem
 	mUploadStatus *systray.MenuItem
+	mPriceStatus  *systray.MenuItem
 	mUploadNow    *systray.MenuItem
+	mPause        *systray.MenuItem
+	mSyncPrices   *systray.MenuItem
 	mSignIn       *systray.MenuItem
 	mSignOut      *systray.MenuItem
 
 	token    string
 	username string
+	paused   bool
+
+	iconMu      sync.Mutex
+	iconWorking bool
+	iconStarted time.Time
 }
 
 var state trayState
@@ -51,29 +65,30 @@ func (a *App) onReady() {
 	systray.SetIcon(iconDefault())
 	systray.SetTooltip("Journal Companion — not signed in")
 
-	// ── Status lines (disabled; read-only display) ───────────────────────────
 	state.mAuthStatus = systray.AddMenuItem("Not signed in", "")
 	state.mAuthStatus.Disable()
 	state.mUploadStatus = systray.AddMenuItem("Last upload: never", "")
 	state.mUploadStatus.Disable()
+	state.mPriceStatus = systray.AddMenuItem("Prices: starting…", "")
+	state.mPriceStatus.Disable()
 
 	systray.AddSeparator()
 
-	// ── Watching controls ────────────────────────────────────────────────────
-	mPause := systray.AddMenuItem("Pause watching", "Pause automatic uploads")
-	mPause.Disable() // Phase 3
+	state.mPause = systray.AddMenuItem("Pause watching", "Pause automatic uploads")
 	state.mUploadNow = systray.AddMenuItem("Upload now", "Upload the watched file immediately")
-	state.mUploadNow.Disable() // enabled after sign-in if watch paths are configured
+	if len(a.Config.Watch) == 0 {
+		state.mPause.Disable()
+	}
+	state.mUploadNow.Disable()
+	state.mSyncPrices = systray.AddMenuItem("Sync prices", "Download price data from Journal")
 
 	systray.AddSeparator()
 
-	// ── History / config ─────────────────────────────────────────────────────
 	mActivity := systray.AddMenuItem("View recent activity", "See recent upload history")
 	mOpenConfig := systray.AddMenuItem("Open config folder", "Open the config folder")
 
 	systray.AddSeparator()
 
-	// ── Startup toggle ───────────────────────────────────────────────────────
 	mStartWithOS := systray.AddMenuItem("Start with Windows", "Launch automatically at login")
 	if a.Config.Behavior.StartWithOS {
 		mStartWithOS.Check()
@@ -81,7 +96,6 @@ func (a *App) onReady() {
 
 	systray.AddSeparator()
 
-	// ── Auth / meta ──────────────────────────────────────────────────────────
 	state.mSignIn = systray.AddMenuItem("Sign in to Journal", "Authenticate with your Journal account")
 	state.mSignOut = systray.AddMenuItem("Sign out", "Remove stored credentials")
 	state.mSignOut.Hide()
@@ -89,14 +103,65 @@ func (a *App) onReady() {
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("Quit", "Exit Journal Companion")
 
-	// Restore auth state from keychain (persisted across restarts).
 	a.loadStoredCredentials()
 
-	go a.handleEvents(mActivity, mOpenConfig, mStartWithOS, mAbout, mQuit)
+	watchCtx, cancelWatcher := context.WithCancel(context.Background())
+	a.cancelWatcher = cancelWatcher
+	a.syncCtx = watchCtx
+	w := watcher.New(a.Config, a.DB, a.makeUploadCallback())
+	a.restoreWatcherState(w)
+	go a.runWatcher(watchCtx, w)
+
+	a.startSyncer(watchCtx)
+
+	go a.handleEvents(w, mActivity, mOpenConfig, mStartWithOS, mAbout, mQuit)
 }
 
-// loadStoredCredentials reads the keychain on startup and updates the tray
-// to the connected state if a token is present.
+func (a *App) restoreWatcherState(w *watcher.Watcher) {
+	if v, _ := a.DB.GetSetting("watcher_paused"); v == "1" {
+		w.Pause()
+		state.mu.Lock()
+		state.paused = true
+		state.mu.Unlock()
+		state.mPause.SetTitle("Resume watching")
+	}
+}
+
+func (a *App) runWatcher(ctx context.Context, w *watcher.Watcher) {
+	if err := w.Start(ctx); err != nil && ctx.Err() == nil {
+		slog.Error("watcher exited unexpectedly", "err", err)
+	}
+}
+
+func (a *App) makeUploadCallback() watcher.UploadFunc {
+	return func(label, path string) (string, error) {
+		state.mu.Lock()
+		token := state.token
+		state.mu.Unlock()
+
+		if token == "" {
+			slog.Info("watcher: skipping upload — not signed in", "path", path)
+			return "", nil
+		}
+
+		a.setIconWorking()
+		client := uploader.New(a.Config.Network.APIBase, a.Version)
+		result, err := client.Upload(token, label, path, a.DB)
+		a.setIconDone()
+
+		if err != nil {
+			if err.Error() == "token rejected — sign in again" {
+				a.setDisconnected()
+			}
+			return "", err
+		}
+
+		ts := time.Now().Format("3:04 PM")
+		a.setUploadStatus(fmt.Sprintf("%s — %s", ts, result.Summary))
+		return result.UploadID, nil
+	}
+}
+
 func (a *App) loadStoredCredentials() {
 	token, _ := auth.LoadToken()
 	if token == "" {
@@ -106,12 +171,11 @@ func (a *App) loadStoredCredentials() {
 	a.setConnected(token, username)
 }
 
-// setConnected updates all auth-dependent UI elements to the signed-in state.
-// Safe to call from any goroutine.
 func (a *App) setConnected(token, username string) {
 	state.mu.Lock()
 	state.token = token
 	state.username = username
+	paused := state.paused
 	state.mu.Unlock()
 
 	label := "Connected to Journal"
@@ -119,7 +183,13 @@ func (a *App) setConnected(token, username string) {
 		label = "Connected as @" + username
 	}
 	state.mAuthStatus.SetTitle(label)
-	systray.SetTooltip(label)
+
+	if paused {
+		systray.SetTooltip("Paused — not watching for changes")
+	} else {
+		systray.SetTooltip(label)
+	}
+
 	state.mSignIn.Hide()
 	state.mSignOut.Show()
 
@@ -128,7 +198,6 @@ func (a *App) setConnected(token, username string) {
 	}
 }
 
-// setDisconnected returns the tray to the signed-out state.
 func (a *App) setDisconnected() {
 	state.mu.Lock()
 	state.token = ""
@@ -142,16 +211,43 @@ func (a *App) setDisconnected() {
 	state.mUploadNow.Disable()
 }
 
-// setUploadStatus updates the "Last upload" status line.
 func (a *App) setUploadStatus(summary string) {
 	state.mUploadStatus.SetTitle("Last upload: " + summary)
 }
 
+func (a *App) setIconWorking() {
+	state.iconMu.Lock()
+	state.iconWorking = true
+	state.iconStarted = time.Now()
+	state.iconMu.Unlock()
+	systray.SetIcon(iconWorking())
+}
+
+func (a *App) setIconDone() {
+	const minDisplay = 200 * time.Millisecond
+	state.iconMu.Lock()
+	elapsed := time.Since(state.iconStarted)
+	state.iconWorking = false
+	state.iconMu.Unlock()
+
+	if elapsed < minDisplay {
+		time.Sleep(minDisplay - elapsed)
+	}
+	systray.SetIcon(iconDefault())
+}
+
 func (a *App) handleEvents(
+	w *watcher.Watcher,
 	mActivity, mOpenConfig, mStartWithOS, mAbout, mQuit *systray.MenuItem,
 ) {
 	for {
 		select {
+		case <-state.mPause.ClickedCh:
+			a.togglePause(w)
+
+		case <-state.mSyncPrices.ClickedCh:
+			a.toggleSyncPrices()
+
 		case <-mOpenConfig.ClickedCh:
 			if err := platform.OpenFolder(a.AppDir); err != nil {
 				slog.Error("open config folder", "err", err)
@@ -182,7 +278,36 @@ func (a *App) handleEvents(
 	}
 }
 
-// startAuthFlow runs the browser-based device-token flow in a goroutine.
+func (a *App) togglePause(w *watcher.Watcher) {
+	if w.IsPaused() {
+		w.Resume()
+		state.mu.Lock()
+		state.paused = false
+		username := state.username
+		state.mu.Unlock()
+
+		state.mPause.SetTitle("Pause watching")
+		_ = a.DB.SetSetting("watcher_paused", "0")
+
+		if username != "" {
+			systray.SetTooltip("Connected as @" + username)
+		} else {
+			systray.SetTooltip("Journal Companion — not signed in")
+		}
+		slog.Info("watcher: resumed")
+	} else {
+		w.Pause()
+		state.mu.Lock()
+		state.paused = true
+		state.mu.Unlock()
+
+		state.mPause.SetTitle("Resume watching")
+		_ = a.DB.SetSetting("watcher_paused", "1")
+		systray.SetTooltip("Paused — not watching for changes")
+		slog.Info("watcher: paused")
+	}
+}
+
 func (a *App) startAuthFlow() {
 	state.mSignIn.Disable()
 	state.mAuthStatus.SetTitle("Signing in…")
@@ -197,7 +322,6 @@ func (a *App) startAuthFlow() {
 	a.setConnected(result.Token, result.Username)
 }
 
-// signOut clears all stored credentials and returns the tray to disconnected state.
 func (a *App) signOut() {
 	if err := auth.DeleteCredentials(); err != nil {
 		slog.Error("delete credentials", "err", err)
@@ -206,7 +330,6 @@ func (a *App) signOut() {
 	slog.Info("signed out")
 }
 
-// uploadNow runs an upload for every configured watch path.
 func (a *App) uploadNow() {
 	state.mu.Lock()
 	token := state.token
@@ -225,18 +348,19 @@ func (a *App) uploadNow() {
 	a.setUploadStatus("uploading…")
 	defer state.mUploadNow.Enable()
 
+	a.setIconWorking()
 	client := uploader.New(a.Config.Network.APIBase, a.Version)
 
 	var lastSummary string
-	for _, w := range a.Config.Watch {
-		result, err := client.Upload(token, w.Label, w.Path, a.DB)
+	for _, wc := range a.Config.Watch {
+		result, err := client.Upload(token, wc.Label, wc.Path, a.DB)
 		if err != nil {
-			slog.Error("upload", "label", w.Label, "path", w.Path, "err", err)
+			slog.Error("upload", "label", wc.Label, "path", wc.Path, "err", err)
 			if result.Status == "network_error" {
 				a.setUploadStatus("Upload pending — check connection")
 			}
-			// 401 means token revoked; drop back to disconnected.
 			if err.Error() == "token rejected — sign in again" {
+				a.setIconDone()
 				a.setDisconnected()
 				return
 			}
@@ -244,6 +368,7 @@ func (a *App) uploadNow() {
 		}
 		lastSummary = result.Summary
 	}
+	a.setIconDone()
 
 	if lastSummary != "" {
 		ts := time.Now().Format("3:04 PM")
@@ -251,8 +376,6 @@ func (a *App) uploadNow() {
 	}
 }
 
-// showRecentActivity logs the last 10 uploads to the log file.
-// Phase 2: no window UI; a dedicated activity window is Phase 3+.
 func (a *App) showRecentActivity() {
 	uploads, err := a.DB.RecentUploads(10)
 	if err != nil {
@@ -274,5 +397,102 @@ func (a *App) showRecentActivity() {
 }
 
 func (a *App) onExit() {
+	if a.cancelWatcher != nil {
+		a.cancelWatcher()
+	}
 	slog.Info("exiting cleanly")
+}
+
+// ── Price sync ───────────────────────────────────────────────────────────────
+
+func (a *App) startSyncer(ctx context.Context) {
+	savedVarsDir, err := syncer.DeriveSavedVarsDir(a.Config.Watch)
+	if err != nil {
+		slog.Info("price sync unavailable", "reason", err)
+		state.mPriceStatus.SetTitle("Prices: not configured")
+		state.mSyncPrices.Hide()
+		return
+	}
+
+	interval := time.Duration(a.Config.Behavior.SyncPricesIntervalMin) * time.Minute
+	if interval == 0 {
+		interval = 60 * time.Minute
+	}
+
+	snapshotURL := a.Config.Network.SnapshotURL
+	if snapshotURL == "" {
+		snapshotURL = a.Config.Network.APIBase + "/api/snapshots/eso-prices/latest"
+	}
+
+	cfg := syncer.Config{
+		Interval:     interval,
+		SnapshotURL:  snapshotURL,
+		SavedVarsDir: savedVarsDir,
+		TokenFunc: func() string {
+			state.mu.Lock()
+			defer state.mu.Unlock()
+			return state.token
+		},
+	}
+	slog.Info("price syncer configured", "url", snapshotURL, "dir", savedVarsDir)
+	s := syncer.New(cfg, a.Config.Behavior.SyncPrices, a)
+	a.priceSyncer = s
+
+	if a.Config.Behavior.SyncPrices {
+		state.mSyncPrices.Check()
+		state.mPriceStatus.SetTitle("Prices: never synced")
+	} else {
+		state.mPriceStatus.SetTitle("Prices: disabled")
+	}
+
+	go s.Run(ctx)
+}
+
+// UpdatePriceSyncStatus implements syncer.StatusReporter.
+// Called from the syncer goroutine after each sync attempt.
+func (a *App) UpdatePriceSyncStatus(status syncer.SyncStatus) {
+	state.mPriceStatus.SetTitle(priceSyncStatusText(status))
+}
+
+func (a *App) toggleSyncPrices() {
+	a.Config.Behavior.SyncPrices = !a.Config.Behavior.SyncPrices
+	if err := config.Save(a.ConfigPath, a.Config); err != nil {
+		slog.Error("save config after sync prices toggle", "err", err)
+	}
+	if a.Config.Behavior.SyncPrices {
+		state.mSyncPrices.Check()
+		state.mPriceStatus.SetTitle("Prices: syncing…")
+		if a.priceSyncer != nil {
+			a.priceSyncer.SetEnabled(true)
+			a.priceSyncer.TriggerSync(a.syncCtx)
+		}
+	} else {
+		state.mSyncPrices.Uncheck()
+		state.mPriceStatus.SetTitle("Prices: disabled")
+		if a.priceSyncer != nil {
+			a.priceSyncer.SetEnabled(false)
+		}
+	}
+	slog.Info("price sync toggled", "enabled", a.Config.Behavior.SyncPrices)
+}
+
+func priceSyncStatusText(status syncer.SyncStatus) string {
+	if !status.Enabled {
+		return "Prices: disabled"
+	}
+	if status.LastSyncAt.IsZero() {
+		return "Prices: never synced"
+	}
+	if status.LastError != nil {
+		return "Prices: failed"
+	}
+	age := time.Since(status.LastSyncAt)
+	if age < time.Hour {
+		m := int(age.Minutes())
+		if m < 1 {
+			m = 1
+		}
+		return fmt.Sprintf("Prices: synced %dm ago", m)
+	}
+	return fmt.Sprintf("Prices: synced %dh ago", int(age.Hours()))
 }

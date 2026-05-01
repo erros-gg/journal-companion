@@ -22,3 +22,6 @@ func OpenBrowser(url string) error {
 func SetStartWithOS(exePath string, enable bool) error {
 	return ErrNotImplemented
 }
+
+// IsFileLocked reports whether the error indicates an exclusive file lock.
+func IsFileLocked(err error) bool { return false }

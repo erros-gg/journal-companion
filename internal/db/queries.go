@@ -1,6 +1,29 @@
 package db
 
-import "time"
+import (
+	"database/sql"
+	"time"
+)
+
+// GetSetting returns the value for key, or ("", nil) if not set.
+func (db *DB) GetSetting(key string) (string, error) {
+	var v string
+	err := db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return v, err
+}
+
+// SetSetting upserts a key/value pair.
+func (db *DB) SetSetting(key, value string) error {
+	_, err := db.Exec(`
+		INSERT INTO settings (key, value) VALUES (?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		key, value,
+	)
+	return err
+}
 
 // Upload mirrors a row from the uploads table.
 type Upload struct {

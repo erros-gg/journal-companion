@@ -83,4 +83,10 @@ CREATE TABLE IF NOT EXISTS watch_state (
     last_upload_id  TEXT     REFERENCES uploads(id),
     last_seen_at    DATETIME NOT NULL
 );
+
+-- settings stores arbitrary key/value pairs for persisting app state across restarts.
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 `

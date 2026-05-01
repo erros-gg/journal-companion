@@ -2,7 +2,11 @@
 
 package platform
 
-import "os/exec"
+import (
+	"errors"
+	"os/exec"
+	"syscall"
+)
 
 func AppName() string { return "Journal Companion" }
 
@@ -23,4 +27,11 @@ func OpenBrowser(url string) error {
 // TODO Phase 4: implement using golang.org/x/sys/windows/registry.
 func SetStartWithOS(exePath string, enable bool) error {
 	return ErrNotImplemented
+}
+
+// IsFileLocked reports whether err is a Windows sharing-violation error,
+// meaning the file is held open by another process.
+func IsFileLocked(err error) bool {
+	var errno syscall.Errno
+	return errors.As(err, &errno) && errno == 0x20 // ERROR_SHARING_VIOLATION
 }
