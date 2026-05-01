@@ -20,11 +20,11 @@ func DeriveSavedVarsDir(watches []config.Watch) (string, error) {
 	return "", errors.New("no eso-savedvariables watch configured")
 }
 
-// DeriveAddonDir returns the TheJournalCompanion addon directory by walking up
-// from SavedVariables to the ESO live root, then into AddOns.
+// DeriveAddonDir returns the Journal addon directory by walking up from
+// SavedVariables to the ESO live root, then into AddOns.
 //
 // ESO's SavedVariables live at:  .../live/SavedVariables/
-// The addon lives at:            .../live/AddOns/TheJournalCompanion/
+// The addon lives at:            .../live/AddOns/Journal/
 //
 // JournalPrices.lua is written here — not to SavedVariables — so ESO never
 // serialises and overwrites it when the player does /reloadui.
@@ -34,5 +34,5 @@ func DeriveAddonDir(watches []config.Watch) (string, error) {
 		return "", err
 	}
 	liveDir := filepath.Dir(savedVarsDir)
-	return filepath.Join(liveDir, "AddOns", "TheJournalCompanion"), nil
+	return filepath.Join(liveDir, "AddOns", "Journal"), nil
 }

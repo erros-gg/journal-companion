@@ -79,7 +79,7 @@ func TestDeriveAddonDir_Found(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := filepath.Join(filepath.Dir(filepath.Dir(watchPath)), "AddOns", "TheJournalCompanion")
+	want := filepath.Join(filepath.Dir(filepath.Dir(watchPath)), "AddOns", "Journal")
 	if dir != want {
 		t.Errorf("got %q, want %q", dir, want)
 	}
