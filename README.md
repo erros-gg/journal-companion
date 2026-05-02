@@ -38,9 +38,9 @@ one-time prompt per install.
 3. The companion is now linked to your account and will upload automatically.
 
 The config file lives at `%APPDATA%\Journal Companion\config.toml`. On first
-run it is created with a commented-out ESO watch block — edit it to point at
-your SavedVariables file if the auto-detected path is wrong. Right-click the
-tray icon and choose **Open config folder** to get there quickly.
+run it is created with a commented-out ESO watch block — uncomment it and set
+the path to your `Journal.lua` SavedVariables file. Right-click the tray icon
+and choose **Open config folder** to get there quickly.
 
 ---
 

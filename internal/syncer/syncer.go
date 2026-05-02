@@ -35,7 +35,7 @@ type SyncStatus struct {
 type Config struct {
 	Interval    time.Duration
 	SnapshotURL string
-	AddonDir    string // path to TheJournalCompanion addon folder; JournalPrices.lua is written here
+	AddonDir    string // path to Journal addon folder; JournalPrices.lua is written here
 	// TokenFunc returns the current device Bearer token. Called on each request.
 	// Returns an empty string when the user is not signed in.
 	TokenFunc func() string

@@ -44,7 +44,7 @@ func gzipBytes(t *testing.T, content string) []byte {
 // ── Path resolution ──────────────────────────────────────────────────────────
 
 func TestDeriveSavedVarsDir_Found(t *testing.T) {
-	const watchPath = `C:\Users\test\SavedVariables\TheJournalCompanion.lua`
+	const watchPath = `C:\Users\test\SavedVariables\Journal.lua`
 	watches := []config.Watch{
 		{Label: "other", Path: `C:\Users\test\other.lua`},
 		{Label: "eso-savedvariables", Path: watchPath},
@@ -71,7 +71,7 @@ func TestDeriveSavedVarsDir_Missing(t *testing.T) {
 }
 
 func TestDeriveAddonDir_Found(t *testing.T) {
-	const watchPath = `C:\Users\test\SavedVariables\TheJournalCompanion.lua`
+	const watchPath = `C:\Users\test\SavedVariables\Journal.lua`
 	watches := []config.Watch{
 		{Label: "eso-savedvariables", Path: watchPath},
 	}
