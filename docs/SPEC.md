@@ -276,10 +276,12 @@ Console platforms (Xbox, PlayStation) are explicitly out of scope for the compan
 ```
 journal-companion/
 ├── README.md
-├── LICENSE
+├── LICENSE          ← add before making repo public; license not yet chosen
+├── CHANGELOG.md
 ├── go.mod
 ├── go.sum
 ├── main.go
+├── build.ps1        ← local Windows build script
 ├── internal/
 │   ├── auth/
 │   │   ├── flow.go
@@ -298,14 +300,20 @@ journal-companion/
 │   ├── db/
 │   │   ├── db.go
 │   │   └── queries.go
+│   ├── syncer/
+│   │   ├── path.go
+│   │   ├── snapshot.go
+│   │   ├── syncer.go
+│   │   └── syncer_test.go
 │   └── platform/
 │       ├── windows.go      # build tag: //go:build windows
 │       ├── darwin.go       # build tag: //go:build darwin
 │       └── linux.go        # build tag: //go:build linux
 ├── assets/
 │   └── icon.ico
-├── scripts/
-│   └── copy-icons.sh
+├── docs/
+│   ├── SPEC.md             ← this file
+│   └── distribution.md     ← release pipeline documentation
 └── .github/
     └── workflows/
         └── release.yml
@@ -314,10 +322,16 @@ journal-companion/
 ### Build and release
 
 ```bash
-go build -ldflags="-H=windowsgui -s -w -X main.version=$(git describe --tags)" -o journal-companion.exe .
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+  go build -ldflags="-H=windowsgui -s -w -X main.version=$(git describe --tags)" \
+  -o journal-companion.exe .
 ```
 
-GitHub Actions on tag push: build, hash, attach to release, with notes from CHANGELOG.md.
+GitHub Actions on tag push: builds with the above flags, generates
+`journal-companion.exe.sha256` using `sha256sum`, verifies the binary is under
+20 MiB, and publishes a GitHub release with both files attached. Release notes
+are extracted from the most recent entry in `CHANGELOG.md`. See
+`docs/distribution.md` for the full release process.
 
 ### Acceptance criteria for companion v1
 

@@ -10,7 +10,7 @@ if (-not $Version) {
 }
 
 $ldflags = "-H=windowsgui -s -w -X main.version=$Version"
-$out     = "dist\TheJournalCompanion.exe"
+$out     = "dist\journal-companion.exe"
 
 Write-Host "Building $out (version: $Version)..."
 

@@ -6,8 +6,13 @@ dist/
 # Go
 vendor/
 
-# Config (never commit API keys)
+# Config (never commit user config — contains file paths and may be extended
+# with tokens in future; tokens today go to OS keyring but guard defensively)
+config.toml
 config.json
+
+# Internal phase notes (not for public consumption)
+docs/phase*.md
 
 # Logs
 *.log

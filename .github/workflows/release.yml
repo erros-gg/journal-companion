@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Build Windows binary
+        run: |
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build \
+            -ldflags="-H=windowsgui -s -w -X main.version=${GITHUB_REF_NAME}" \
+            -o journal-companion.exe .
+
+      - name: Check binary size
+        run: |
+          SIZE=$(stat -c%s journal-companion.exe)
+          MAX=$((20 * 1024 * 1024))
+          echo "Binary size: $(numfmt --to=iec-i --suffix=B $SIZE) (${SIZE} bytes, limit 20 MiB)"
+          if [ "$SIZE" -gt "$MAX" ]; then
+            echo "ERROR: binary exceeds 20 MiB limit — current ${SIZE} bytes, max ${MAX} bytes"
+            exit 1
+          fi
+
+      - name: Generate SHA-256 checksum
+        run: sha256sum journal-companion.exe > journal-companion.exe.sha256
+
+      - name: Verify checksum format
+        run: |
+          # Simulate the parse that install.ps1 performs:
+          # split first line on whitespace, first token must be 64 lowercase hex chars
+          HASH=$(awk 'NR==1{print $1}' journal-companion.exe.sha256)
+          if ! echo "$HASH" | grep -qE '^[0-9a-f]{64}$'; then
+            echo "ERROR: checksum format unexpected — got: $HASH"
+            exit 1
+          fi
+          echo "Checksum OK: $HASH"
+
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        run: |
+          # Extract the body of the first (most recent) ## [x.y.z] section.
+          # Stops at the next ## [ heading or end of file.
+          BODY=$(awk '/^## \[/{count++; if(count==2) exit; next} count==1{print}' CHANGELOG.md)
+          {
+            echo 'body<<EOF'
+            echo "$BODY"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            journal-companion.exe
+            journal-companion.exe.sha256
+          body: ${{ steps.notes.outputs.body }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

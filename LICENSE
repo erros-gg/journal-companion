@@ -1,0 +1,32 @@
+Copyright (c) 2026 Erros. All rights reserved.
+
+The source code in this repository is published for the purposes of
+transparency, security review, and public scrutiny. Permission is hereby
+granted to view this source code and to reference it for the purpose of
+discussing, reviewing, or reporting issues with the software.
+
+No other rights are granted. In particular, and without limitation, no
+license is granted to:
+
+  - use the software, in source or compiled form, for any purpose other
+    than running an official release distributed by the copyright holder;
+  - copy, modify, merge, publish, distribute, sublicense, or sell copies
+    of the software, in whole or in part;
+  - create or distribute derivative works based on the software;
+  - remove or alter any copyright, trademark, or attribution notices.
+
+Contributions submitted to this repository (for example, via pull request
+or patch) are accepted on the understanding that the contributor grants
+the copyright holder a perpetual, irrevocable, worldwide, royalty-free
+license to use, modify, and incorporate the contribution into the
+software, and that the contributor has the right to grant such a license.
+
+For licensing inquiries, contact: erros@erros.gg
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES,
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE,
+ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
